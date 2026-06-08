@@ -1,6 +1,6 @@
 {
     "name": "homebridge-esphome-waterlevel-hv2",
-    "version": "1.4.6",
+    "version": "1.4.7",
     "description": "ESPHome plugin for Homebridge with Water Level, Temperature, Humidity sensor support and Noise Encryption",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
