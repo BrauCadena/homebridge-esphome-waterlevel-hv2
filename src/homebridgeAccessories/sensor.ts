@@ -43,7 +43,7 @@ export const sensorHelper = (component: any, accessory: PlatformAccessory): bool
     
     // Distance sensor (water level in m/cm/mm) — mapped to LightSensor since HomeKit has no distance service
     else if (isDistanceComponent(unit, deviceClass)) {
-        defaultSetup(component, accessory, Service.LightSensor, Characteristic.CurrentAmbientLightLevel);
+        distanceSetup(component, accessory);
         return true;
     }
 
@@ -86,6 +86,31 @@ const defaultSetup = (
     updateValue(component.state?.state);
 
     // Subscribe to real-time state changes
+    component.on('state', (stateObj: any) => {
+        updateValue(typeof stateObj === 'object' ? stateObj.state : stateObj);
+    });
+};
+
+/**
+ * Distance/water-level sensor setup.
+ * HomeKit's CurrentAmbientLightLevel enforces a minimum of 0.0001 — values at or
+ * below zero (e.g. empty tank) must be clamped or HomeKit rejects the update.
+ */
+const distanceSetup = (component: any, accessory: PlatformAccessory): void => {
+    let sensorService = accessory.getService(Service.LightSensor);
+    if (!sensorService) {
+        sensorService = accessory.addService(Service.LightSensor, component.config.name);
+    }
+
+    const updateValue = (value: number | undefined) => {
+        if (value === undefined || value === null) return;
+        // Clamp to HomeKit minimum for CurrentAmbientLightLevel
+        const safe = Math.max(0.0001, value);
+        sensorService?.getCharacteristic(Characteristic.CurrentAmbientLightLevel).updateValue(safe);
+    };
+
+    updateValue(component.state?.state);
+
     component.on('state', (stateObj: any) => {
         updateValue(typeof stateObj === 'object' ? stateObj.state : stateObj);
     });
