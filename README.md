@@ -1,99 +1,88 @@
-# homebridge-esphome-ts
+# Homebridge ESPHome HV2
+[![npm version](https://badge.fury.io/js/homebridge-esphome-hv2.svg)](https://www.npmjs.com/package/homebridge-esphome-hv2)
+[![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/blue)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 
-This plugin integrates the [esphome](https://esphome.io/) platform into homebridge so that you don't have to go
-through homeassistant if you don't want to (not that there is anything wrong with that). It makes use of the native API of esphome
-so that you can expect instant updates for all your binary sensors what have you.
+Developed and maintained by **Brau Cadena**.
 
-Supported components include:
+This plugin integrates the [ESPHome](https://esphome.io/) platform into Homebridge so that you don't have to go through Home Assistant if you don't want to. It makes use of the native API of ESPHome so that you can expect instant updates for all your accessories.
 
--   Lights
--   Switches
--   BinarySensors (motion, window, door, smoke and leakage)
--   Sensors (temperature & humidity at the moment)
+## 🚀 Why HV2?
+This version was specifically refactored to solve modern connectivity issues:
+- **API v1.14+ Compatibility**: Fixes the `outdated API 0.0` error found in older plugins when connecting to recent ESPHome firmware.
+- **Noise Encryption Support**: Adds the `encryptionKey` field for secure communication (Noise protocol), which is now the standard for ESPHome.
+- **Node.js Optimized**: Designed for modern environments, supporting **Node.js 18, 20, and 22**.
 
-This project is currently still in beta, but I thought that many eyes see more than just
-my two :)
+### Supported Components:
+- **Lights**: Including dimmable and RGB.
+- **Switches**: Standard switches and restart buttons.
+- **Binary Sensors**: Motion, window, door, smoke, and leakage.
+- **Sensors**: Temperature, humidity, and **Ultrasonic/Water Level** (rendered as percentage).
+
+---
 
 ## Installation
+Unless you haven't done so already, make sure to install Homebridge first. See instructions [here](https://github.com/homebridge/homebridge/wiki). Once you have done this, you can install this plugin by typing:
 
-Unless you haven't done so already, make sure to install homebridge first. See instructions
-[here](https://github.com/homebridge/homebridge/wiki). Once you have done this, you can install this plugin by typing
-
+```bash
+npm install -g homebridge-esphome-hv2
 ```
-npm i -g homebridge-esphome-ts
-```
-
-Once this is done, you can configure your homebridge config.json according to the next section.
 
 ## Getting Started
+Add the following to your Homebridge config.json or use the Configuration UI:
+
 
 ```json
 {
-    "platform": "esphome",
+    "platform": "esphome-hv2",
     "devices": [
         {
-            "host": "my_esp.local",
-            "password": "Passw0rd!",
-            "port": 9001,
-            "retryAfter": 120000 // optional, time in milliseconds!
+            "name": "Tinaco Sensor",
+            "host": "192.168.68.113",
+            "encryptionKey": "YOUR_32_CHAR_ENCRYPTION_KEY",
+            "port": 6053,
+            "retryAfter": 60000 
         }
     ],
-    "retryAfter": 60000 // optional, time in milliseconds!
+    "discover": true,
+    "debug": false
 }
 ```
 
-Only the `host` key is mandatory under devices. As password `''` is assumed aka no password and the default
-port number 6053 is also wired into the plugin. You can add, in theory, as many ESP devices as you want to
-that array.
+##  Configuration Fields:
+host: (Mandatory) The IP address of your ESP device (e.g., 192.168.1.50 or my_esp.local).
+encryptionKey: The Noise encryption key found in your ESPHome YAML under api: encryption: key:.
+password: (Legacy) Only use if you are still using the old plaintext password method.
+port: Default is 6053.
 
-If some of your devices are password-less you can enable devices discovery to let the plugin find all your
-devices by setting `discover: true` in platform configuration. In case if you don't have any password-secured
-devices you can even fully omit `"devices"` section in platform configuration.
-
-In case you don't have a working esphome configuration you can have look at the examples folder. There you will
-find both an example homebridge `config.json` file as well as an example esphome configuration. For further guidance
-on esphome please check out their website.
-
-### retryAfter
-
-Both `retryAfter` keys are as explained optional and need to contain an integer that tells this plugin
-after what time frame it should try to reconnect. Keep in mind that this value needs to be in _milliseconds_. The inner
-`retryAfter` will trump the outer value if present. The default value is 90 seconds.
-
-### Blacklisting
-
-If for some reason you want to exclude a specific component from this plugin just
-add a key containing its name (as it was defined in esphome and is shown initially in HomeKit) to a string array under the key `blacklist`:
+## Blacklisting
+If you want to exclude a specific component, add its name (as defined in ESPHome) to the blacklist array:
 
 ```json
 {
-    "platform": "esphome",
-    "devices": [
-        ...
-    ],
+    "platform": "esphome-hv2",
+    "devices": [...],
     "blacklist": [
-        "My blacklisted switch"
+        "Internal Status LED",
+        "Restart Button"
     ]
 }
 ```
 
-## Todo
-
--   [x] Implement a blacklist for components
--   [ ] Testing, especially with the new homebridge version
--   [x] Implement sensor component
-
 ## Troubleshooting
+1. Check your YAML: Please make sure to add the api: entry to your ESPHome configuration!
+2. Connection Issues: If you see outdated API 0.0 or Connection Refused, ensure you have copied the encryptionKey exactly as it appears in your YAML and that your Homebridge can ping the device IP.
+3. Debug Mode: Before opening a ticket, set "debug": true in your config. This will:
 
-Please make sure to add the `api` entry to your config!
+Output the raw data received from your ESP device to the Homebridge console.
 
-If you still have problems please feel free to open a ticket on GitHub. Before doing so add this to your
-config `"debug": true`. The plugin will now output what it has gotten from your ESP device.
-Please append this when you open a ticket here on GitHub. Please attach your config as well and make
-sure to remove any sensitive information such as WiFi passwords.
+Write individual log files for each device under /tmp (or your OS temp folder).
 
-In addition to simply writing stuff to the console, it will also write everything received from your devices to individual
-files under `/tmp`. You can then submit these files with any issues you might file on GitHub.
+Note: Writing debug files occupies space. Turn off this option once you don't need it anymore.
 
-_Slight warning_ The writing of these files means that it will also occupy more space on your SD card or whatever you
-might have. So simply turn off this option once you don't need it anymore.
+## Contributing
+This project is an open effort to keep the ESPHome-Homebridge ecosystem alive. If you find a bug or want to suggest a feature, please open an issue on the official GitHub repository:
+
+https://github.com/BrauCadena/homebridge-esphome-hv2
+
+## License
+Licensed under the GPL-3.0 License.

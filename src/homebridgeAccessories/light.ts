@@ -1,4 +1,3 @@
-import { tap } from 'rxjs/operators';
 import {
     CharacteristicEventTypes,
     CharacteristicSetCallback,
@@ -8,126 +7,120 @@ import {
 } from 'homebridge';
 import { Characteristic, Service } from '../index';
 import { ComponentHelper } from './componentHelpers';
-import { DEFAULT_NO_EFFECT, LightComponent, LightStateEvent } from 'esphome-ts';
 
-export const lightHelper: ComponentHelper = (component: LightComponent, accessory: PlatformAccessory): boolean => {
-    let lightBulbService: HAPService | undefined = accessory.services.find(
-        (service: HAPService) => service.UUID === Service.Lightbulb.UUID,
-    );
+const DEFAULT_NO_EFFECT = 'None';
+
+/**
+ * Helper to configure Light entities in Homebridge.
+ * Using 'any' for the component to avoid export member errors from the native library.
+ */
+export const lightHelper: ComponentHelper = (component: any, accessory: PlatformAccessory): boolean => {
+    // Search for an existing Lightbulb service or create a new one
+    let lightBulbService: HAPService | undefined = accessory.getService(Service.Lightbulb);
+    
     if (!lightBulbService) {
-        lightBulbService = accessory.addService(new Service.Lightbulb(component.name, ''));
+        lightBulbService = accessory.addService(Service.Lightbulb, component.config.name);
     }
 
-    if (component.supportsRgb) {
-        let lastHue: number | undefined;
-        let lastSat: number | undefined;
-        lightBulbService
-            .getCharacteristic(Characteristic.Hue)
-            ?.on(CharacteristicEventTypes.SET, (hue: CharacteristicValue, callback: CharacteristicSetCallback) => {
-                lastHue = hue as number;
-                const hsv = component.hsv;
-                hsv.hue = lastHue ?? 0;
-                hsv.saturation = lastSat ?? 0;
-                component.hsv = hsv;
-                callback();
-            });
-        lightBulbService
-            .getCharacteristic(Characteristic.Saturation)
-            ?.on(
-                CharacteristicEventTypes.SET,
-                (saturation: CharacteristicValue, callback: CharacteristicSetCallback) => {
-                    lastSat = saturation as number;
-                    callback();
-                },
-            );
-        lightBulbService
-            .getCharacteristic(Characteristic.Brightness)
-            ?.on(
-                CharacteristicEventTypes.SET,
-                (brightness: CharacteristicValue, callback: CharacteristicSetCallback) => {
-                    const hsv = component.hsv;
-                    hsv.value = brightness as number;
-                    component.hsv = hsv;
-                    callback();
-                },
-            );
-    } else if (component.supportsBrightness) {
-        lightBulbService
-            .getCharacteristic(Characteristic.Brightness)
-            ?.on(
-                CharacteristicEventTypes.SET,
-                (brightness: CharacteristicValue, callback: CharacteristicSetCallback) => {
-                    if (typeof brightness === 'number') {
-                        component.setBrightness(brightness);
-                    }
-                    callback();
-                },
-            );
-    }
-
+    /**
+     * ON / OFF State Handling
+     */
     lightBulbService
         .getCharacteristic(Characteristic.On)
-        ?.on(CharacteristicEventTypes.SET, (on: CharacteristicValue, callback: CharacteristicSetCallback) => {
-            !!on ? component.turnOn() : component.turnOff();
+        .on(CharacteristicEventTypes.SET, (on: CharacteristicValue, callback: CharacteristicSetCallback) => {
+            // Trigger turnOn or turnOff based on HomeKit input
+            on ? component.turnOn().catch(() => null) : component.turnOff().catch(() => null);
             callback();
         });
 
-    const effects = component
-        .availableEffects()
-        .filter((effect: string) => effect !== DEFAULT_NO_EFFECT)
-        .map((effect: string) => {
-            const switchName = `${component.name} - ${effect}`;
-            const switchSubType = `${effect} Switch`;
-            let switchService: HAPService | undefined = accessory.services.find(
-                (service: HAPService) => service.UUID === Service.Switch.UUID && service.subtype === switchSubType,
-            );
-            if (!switchService) {
-                switchService = accessory.addService(new Service.Switch(switchName, switchSubType));
-            }
-            return {
-                service: switchService,
-                name: effect,
-            };
-        });
-
-    if (effects.length > 0) {
-        effects.forEach(({ name, service }): void => {
-            service
-                ?.getCharacteristic(Characteristic.On)
-                ?.on(CharacteristicEventTypes.SET, (on: CharacteristicValue, callback: CharacteristicSetCallback) => {
-                    component.effect = on ? name : DEFAULT_NO_EFFECT;
-                    effects
-                        .filter(({ name: otherEffectName }) => otherEffectName !== name)
-                        .forEach(({ service: otherEffectService }) => {
-                            otherEffectService?.getCharacteristic(Characteristic.On).updateValue(false);
-                        });
-                    callback();
-                });
-        });
+    /**
+     * Brightness Handling
+     * Only configured if the ESPHome entity supports it
+     */
+    if (component.config.supportsBrightness) {
+        lightBulbService
+            .getCharacteristic(Characteristic.Brightness)
+            .on(CharacteristicEventTypes.SET, (brightness: CharacteristicValue, callback: CharacteristicSetCallback) => {
+                // ESPHome expects brightness as a float between 0.0 and 1.0
+                component.setLight({ brightness: (brightness as number) / 100 }).catch(() => null);
+                callback();
+            });
     }
 
-    component.state$
-        .pipe(
-            tap((state: LightStateEvent) => {
-                lightBulbService!.getCharacteristic(Characteristic.On)?.updateValue(!!state.state);
-                if (component.supportsRgb) {
-                    const hsv = component.hsv;
-                    lightBulbService!.getCharacteristic(Characteristic.Hue)?.updateValue(hsv.hue);
-                    lightBulbService!.getCharacteristic(Characteristic.Saturation)?.updateValue(hsv.saturation);
-                    lightBulbService!.getCharacteristic(Characteristic.Brightness)?.updateValue(hsv.value);
-                } else if (component.supportsBrightness) {
-                    lightBulbService!
-                        .getCharacteristic(Characteristic.Brightness)
-                        ?.updateValue((state.brightness ?? 0) * 100);
-                }
-                if (effects.length > 0) {
-                    effects.forEach(({ name: effectName, service: effectService }): void => {
-                        effectService?.getCharacteristic(Characteristic.On)?.updateValue(effectName === state.effect);
-                    });
-                }
-            }),
-        )
-        .subscribe();
+    /**
+     * RGB Color Handling (Hue & Saturation)
+     * Only configured if the ESPHome entity supports RGB
+     */
+    if (component.config.supportsRgb) {
+        lightBulbService
+            .getCharacteristic(Characteristic.Hue)
+            .on(CharacteristicEventTypes.SET, (hue: CharacteristicValue, callback: CharacteristicSetCallback) => {
+                component.setLight({ hue: hue as number }).catch(() => null);
+                callback();
+            });
+
+        lightBulbService
+            .getCharacteristic(Characteristic.Saturation)
+            .on(CharacteristicEventTypes.SET, (sat: CharacteristicValue, callback: CharacteristicSetCallback) => {
+                component.setLight({ saturation: sat as number }).catch(() => null);
+                callback();
+            });
+    }
+
+    /**
+     * Light Effects Handling
+     * Creates a separate Switch service for each available effect
+     */
+    const effects: { service: HAPService, name: string }[] = (component.config.effects || [])
+        .filter((effect: string) => effect !== DEFAULT_NO_EFFECT)
+        .map((effect: string) => {
+            const switchName = `${component.config.name} - ${effect}`;
+            let switchService = accessory.getService(switchName);
+            if (!switchService) {
+                switchService = accessory.addService(Service.Switch, switchName, effect);
+            }
+            return { service: switchService, name: effect };
+        });
+
+    // Setup listeners for each effect switch
+    effects.forEach((eff: { service: HAPService, name: string }) => {
+        eff.service
+            .getCharacteristic(Characteristic.On)
+            .on(CharacteristicEventTypes.SET, (on: CharacteristicValue, callback: CharacteristicSetCallback) => {
+                const targetEffect = on ? eff.name : DEFAULT_NO_EFFECT;
+                component.setLight({ effect: targetEffect }).catch(() => null);
+                callback();
+            });
+    });
+
+    /**
+     * Real-time State Updates
+     * Listens to the 'state' event from the ESP32 and updates HomeKit
+     */
+    component.on('state', (state: any) => {
+        // Update power state
+        lightBulbService!.getCharacteristic(Characteristic.On).updateValue(state.state);
+        
+        // Update brightness if supported
+        if (component.config.supportsBrightness && state.brightness !== undefined) {
+            lightBulbService!.getCharacteristic(Characteristic.Brightness).updateValue(state.brightness * 100);
+        }
+
+        // Update RGB colors if supported
+        if (component.config.supportsRgb) {
+            if (state.hue !== undefined) {
+                lightBulbService!.getCharacteristic(Characteristic.Hue).updateValue(state.hue);
+            }
+            if (state.saturation !== undefined) {
+                lightBulbService!.getCharacteristic(Characteristic.Saturation).updateValue(state.saturation);
+            }
+        }
+
+        // Synchronize effect switches with the current active effect
+        effects.forEach((eff: { service: HAPService, name: string }) => {
+            eff.service.getCharacteristic(Characteristic.On).updateValue(state.effect === eff.name);
+        });
+    });
 
     return true;
 };

@@ -1,27 +1,47 @@
 import { CharacteristicEventTypes } from 'hap-nodejs';
-import { tap } from 'rxjs/operators';
 import { Characteristic, Service } from '../index';
-import { SwitchComponent } from 'esphome-ts';
 import { CharacteristicSetCallback, CharacteristicValue, PlatformAccessory } from 'homebridge';
 
-export const switchHelper = (component: SwitchComponent, accessory: PlatformAccessory): boolean => {
-    let service = accessory.services.find((service) => service.UUID === Service.Switch.UUID);
+/**
+ * Helper to configure Switch entities in Homebridge.
+ * Using 'any' for the component to bypass specific type export issues from the library.
+ */
+export const switchHelper = (component: any, accessory: PlatformAccessory): boolean => {
+    // Search for an existing Switch service or create a new one
+    let service = accessory.getService(Service.Switch);
+    
     if (!service) {
-        service = accessory.addService(new Service.Switch(component.name, ''));
+        service = accessory.addService(Service.Switch, component.config.name);
     }
 
-    component.state$
-        .pipe(tap(() => service?.getCharacteristic(Characteristic.On)?.setValue(component.status)))
-        .subscribe();
+    /**
+     * Real-time State Synchronization
+     * Updates HomeKit when the ESP32 state changes locally
+     */
+    component.on('state', (state: boolean) => {
+        service?.getCharacteristic(Characteristic.On).updateValue(state);
+    });
 
+    /**
+     * HomeKit Command Handling
+     * Manages requests from Siri or the Home App
+     */
     service
         .getCharacteristic(Characteristic.On)
-        ?.on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-            if (component.status !== !!value) {
-                !!value ? component.turnOn() : component.turnOff();
+        .on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
+            const targetState = !!value;
+            
+            // Only send the command to the ESP32 if the target state is different from the current one
+            if (component.state !== targetState) {
+                targetState 
+                    ? component.turnOn().catch(() => null) 
+                    : component.turnOff().catch(() => null);
             }
             callback();
         });
+
+    // Initialize the switch with the current state from the device
+    service.getCharacteristic(Characteristic.On).updateValue(component.state);
 
     return true;
 };

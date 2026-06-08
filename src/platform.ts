@@ -1,177 +1,144 @@
 import { API, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig } from 'homebridge';
-import { concat, from, interval, Observable, of, Subscription } from 'rxjs';
-import { catchError, filter, map, mergeMap, take, tap, timeout } from 'rxjs/operators';
 import { componentHelpers } from './homebridgeAccessories/componentHelpers';
-import { Accessory, PLATFORM_NAME, PLUGIN_NAME, UUIDGen } from './index';
-import { writeReadDataToLogFile } from './shared';
-import { EspDevice } from 'esphome-ts';
-import { discoverDevices } from './discovery';
-
-interface IEsphomeDeviceConfig {
-    host: string;
-    port?: number;
-    password?: string;
-    retryAfter?: number;
-}
-
-interface IEsphomePlatformConfig extends PlatformConfig {
-    devices?: IEsphomeDeviceConfig[];
-    blacklist?: string[];
-    debug?: boolean;
-    retryAfter?: number;
-    discover?: boolean;
-    discoveryTimeout?: number;
-}
-
-const DEFAULT_RETRY_AFTER = 90_000;
-const DEFAULT_DISCOVERY_TIMEOUT = 5_000; // milliseconds
+import { Accessory, PLATFORM_NAME, PLUGIN_NAME, UUIDGen, Service, Characteristic } from './index';
+import { Client } from '@2colors/esphome-native-api';
 
 export class EsphomePlatform implements DynamicPlatformPlugin {
-    protected readonly espDevices: EspDevice[] = [];
-    protected readonly blacklistSet: Set<string>;
-    protected readonly subscription: Subscription;
+    protected readonly espDevices: any[] = [];
     protected readonly accessories: PlatformAccessory[] = [];
 
     constructor(
         protected readonly log: Logging,
-        protected readonly config: IEsphomePlatformConfig,
+        protected readonly config: PlatformConfig,
         protected readonly api: API,
     ) {
-        this.subscription = new Subscription();
-        this.log('starting esphome');
-        if (!Array.isArray(this.config.devices) && !this.config.discover) {
-            this.log.error(
-                'You did not specify a devices array and discovery is ' +
-                    'disabled! Esphome will not provide any accessories',
-            );
-            this.config.devices = [];
-        }
-        this.blacklistSet = new Set<string>(this.config.blacklist ?? []);
+        this.log.info('ESPHome HV2 - Stable Final Build v2.6.0');
 
         this.api.on('didFinishLaunching', () => {
-            this.onHomebridgeDidFinishLaunching();
-        });
-        this.api.on('shutdown', () => {
-            this.espDevices.forEach((device: EspDevice) => device.terminate());
-            this.subscription.unsubscribe();
+            this.connectToDevices();
         });
     }
 
-    protected onHomebridgeDidFinishLaunching(): void {
-        let devices: Observable<IEsphomeDeviceConfig> = from(this.config.devices ?? []);
-        if (this.config.discover) {
-            const excludeConfigDevices: Set<string> = new Set();
-            devices = concat(
-                discoverDevices(this.config.discoveryTimeout ?? DEFAULT_DISCOVERY_TIMEOUT, this.log).pipe(
-                    map((discoveredDevice) => {
-                        const configDevice = this.config.devices?.find(({ host }) => host === discoveredDevice.host);
-                        let deviceConfig = discoveredDevice;
-                        if (configDevice) {
-                            excludeConfigDevices.add(configDevice.host);
-                            deviceConfig = { ...discoveredDevice, ...configDevice };
-                        }
+    protected connectToDevices(): void {
+        const devices = (this.config.devices as any[]) || [];
+        
+        for (const deviceConfig of devices) {
+            this.log.info(`[HV2] Connecting to: ${deviceConfig.host}`);
 
-                        return {
-                            ...deviceConfig,
-                            // Override hostname with ip address when available
-                            // to avoid issues with mDNS resolution at OS level
-                            host: discoveredDevice.address ?? discoveredDevice.host,
-                        };
-                    }),
-                ),
-                // Feed into output remaining devices from config that haven't been discovered
-                devices.pipe(filter(({ host }) => !excludeConfigDevices.has(host))),
-            );
+            // Initialize client with correct parameters for modern ESPHome
+            const device: any = new Client({
+                host: deviceConfig.host,
+                port: deviceConfig.port || 6053,
+                password: deviceConfig.password || '',
+                clientName: 'Homebridge HV2', // Required for handshake in ESPHome 2025+
+                apiVersionMajor: 1,
+                apiVersionMinor: 40 
+            } as any);
+
+            this.espDevices.push(device);
+            device.connect();
+
+            device.on('connected', () => {
+                this.log.info(`[HV2] TCP Connection established with ${deviceConfig.host}. Handshaking...`);
+            });
+
+            device.on('initialized', () => {
+                this.log.info(`[HV2] !!! INITIALIZED !!! Success with ${deviceConfig.host}`);
+            });
+
+            device.on('deviceInfo', (info: any) => {
+                this.log.info(`[HV2] Device Info received: ${info.name} (Model: ${info.modelName || 'ESPHome Device'})`);
+            });
+
+            /**
+             * DYNAMIC COMPONENT DISCOVERY
+             * The @2colors library emits specific events for each component type.
+             * We listen to all common types to ensure we catch your sensors.
+             */
+            const componentTypes = [
+                'sensor', 'binarySensor', 'switch', 'light', 'fan', 
+                'climate', 'number', 'select', 'cover', 'textSensor',
+				'binary_sensor'
+            ];
+            
+            componentTypes.forEach(type => {
+                device.on(type, (entity: any) => {
+                    this.log.info(`[HV2] ${type.toUpperCase()} discovered: ${entity.config.name}`);
+                    
+                    if (!device.entities) {
+                        device.entities = [];
+                    }
+
+                    // Check if entity is already in our list to avoid duplicates
+                    const exists = device.entities.find((e: any) => e.config.objectId === entity.config.objectId);
+                    if (!exists) {
+                        // We inject the type into the entity object so addAccessories knows how to process it
+                        entity.type = type; 
+                        device.entities.push(entity);
+                    }
+
+                    // Trigger accessory registration/update
+                    this.addAccessories(device);
+                });
+            });
+
+            // Generic entity fallback (if supported by your library version)
+            device.on('entity', (entity: any) => {
+                this.log.info(`[HV2] Generic Entity discovered: ${entity.config.name}`);
+                if (!device.entities) device.entities = [];
+                device.entities.push(entity);
+                this.addAccessories(device);
+            });
+
+            device.on('error', (err: any) => {
+                this.log.error(`[HV2] Connection Error (${deviceConfig.host}): ${err.message || err}`);
+            });
+            
+            device.on('disconnected', () => {
+                this.log.warn(`[HV2] Disconnected from ${deviceConfig.host}. Retrying...`);
+            });
         }
-
-        this.subscription.add(
-            devices
-                .pipe(
-                    mergeMap((deviceConfig) => {
-                        const device = new EspDevice(deviceConfig.host, deviceConfig.password, deviceConfig.port);
-                        if (this.config.debug) {
-                            this.log('Writing the raw data from your ESP Device to /tmp');
-                            writeReadDataToLogFile(deviceConfig.host, device);
-                        }
-                        device.provideRetryObservable(
-                            interval(deviceConfig.retryAfter ?? this.config.retryAfter ?? DEFAULT_RETRY_AFTER).pipe(
-                                tap(() => this.log.info(`Trying to reconnect now to device ${deviceConfig.host}`)),
-                            ),
-                        );
-                        return device.discovery$.pipe(
-                            filter((value: boolean) => value),
-                            take(1),
-                            timeout(10 * 1000),
-                            tap(() => this.addAccessories(device)),
-                            catchError((err) => {
-                                if (err.name === 'TimeoutError') {
-                                    this.log.warn(
-                                        `The device under the host ${deviceConfig.host} could not be reached.`,
-                                    );
-                                }
-                                return of(err);
-                            }),
-                        );
-                    }),
-                )
-                .subscribe(),
-        );
     }
 
-    private addAccessories(device: EspDevice): void {
-        for (const key of Object.keys(device.components)) {
-            const component = device.components[key];
-            if (this.blacklistSet.has(component.name)) {
-                this.logIfDebug(`not processing ${component.name} because it was blacklisted`);
-                continue;
-            }
-            const componentHelper = componentHelpers.get(component.type);
-            if (!componentHelper) {
-                this.log(`${component.name} is currently not supported. You might want to file an issue on Github.`);
-                continue;
-            }
-            const uuid = UUIDGen.generate(component.name);
-            let newAccessory = false;
-            let accessory: PlatformAccessory | undefined = this.accessories.find(
-                (accessory) => accessory.UUID === uuid,
-            );
+    private addAccessories(device: any): void {
+        const entities = device.entities || [];
+        if (entities.length === 0) return;
+
+        for (const entity of entities) {
+            // Match the component type with our Homebridge helpers
+            const componentHelper = componentHelpers.get(entity.type);
+            if (!componentHelper) continue;
+
+            // Generate a persistent UUID
+            const uuid = UUIDGen.generate(entity.config.uniqueId || entity.config.name);
+            let accessory = this.accessories.find((a) => a.UUID === uuid);
+            
             if (!accessory) {
-                this.logIfDebug(`${component.name} must be a new accessory`);
-                accessory = new Accessory(component.name, uuid);
-                newAccessory = true;
-            }
-            if (!componentHelper(component, accessory)) {
-                this.log(`${component.name} could not be mapped to HomeKit. Please file an issue on Github.`);
-                if (!newAccessory) {
-                    this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+                this.log.info(`[HV2] Registering New Accessory: ${entity.config.name}`);
+                accessory = new Accessory(entity.config.name, uuid);
+                
+                // Set standard accessory information
+                const infoService = accessory.getService(Service.AccessoryInformation);
+                if (infoService) {
+                    infoService
+                        .setCharacteristic(Characteristic.Manufacturer, 'ESPHome')
+                        .setCharacteristic(Characteristic.Model, entity.type || 'Generic Device')
+                        .setCharacteristic(Characteristic.SerialNumber, entity.config.objectId || 'Unknown');
                 }
-                continue;
-            }
 
-            this.log(`${component.name} discovered and setup.`);
-            if (accessory && newAccessory) {
-                this.accessories.push(accessory);
-                this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+                // Call the helper to set up services and characteristics
+                if (componentHelper(entity, accessory)) {
+                    this.accessories.push(accessory);
+                    this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+                }
+            } else {
+                // Update existing accessory state/logic
+                componentHelper(entity, accessory);
             }
         }
-        this.logIfDebug(device.components);
     }
 
     public configureAccessory(accessory: PlatformAccessory): void {
-        if (!this.blacklistSet.has(accessory.displayName)) {
-            this.accessories.push(accessory);
-            this.logIfDebug(`cached accessory ${accessory.displayName} was added`);
-        } else {
-            this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-            this.logIfDebug(`unregistered ${accessory.displayName} because it was blacklisted`);
-        }
-    }
-
-    private logIfDebug(msg?: any, ...parameters: unknown[]): void {
-        if (this.config.debug) {
-            this.log(msg, parameters);
-        } else {
-            this.log.debug(msg, parameters);
-        }
+        this.accessories.push(accessory);
     }
 }

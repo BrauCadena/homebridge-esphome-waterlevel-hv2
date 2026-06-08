@@ -1,5 +1,5 @@
 {
-    "pluginAlias": "esphome",
+    "pluginAlias": "esphome-hv2",
     "pluginType": "platform",
     "singular": true,
     "schema": {
@@ -12,52 +12,61 @@
                     "type": "object",
                     "properties": {
                         "host": {
-                            "name": "Host",
-                            "type": "string"
+                            "title": "Host (IP Address)",
+                            "type": "string",
+                            "description": "The IP address or hostname of your ESP device."
                         },
                         "port": {
-                            "name": "Port",
+                            "title": "Port",
                             "type": "number",
+                            "default": 6053,
+                            "required": false
+                        },
+                        "encryptionKey": {
+                            "title": "Encryption Key (Noise)",
+                            "type": "string",
+                            "description": "The 32-character encryption key found in your ESPHome YAML under 'api: encryption: key:'.",
                             "required": false
                         },
                         "password": {
-                            "name": "Password",
+                            "title": "API Password (Legacy)",
                             "type": "string",
+                            "description": "Only use this if you are using the older 'password' authentication method.",
                             "required": false
                         }
                     }
                 }
             },
             "debug": {
-                "title": "Debug",
+                "title": "Debug Mode",
                 "type": "boolean",
-                "required": false
+                "required": false,
+                "description": "Enable this to see detailed logs in the Homebridge console."
             },
             "discover": {
-                "title": "Discover devices",
+                "title": "Discover devices (mDNS)",
                 "type": "boolean",
-                "required": false
-            },
-            "discoveryTimeout": {
-                "title": "Discovery timeout",
-                "type": "integer",
-                "minimum": 0,
-                "required": false
+                "required": false,
+                "description": "Automatically find devices on your local network using mDNS."
             }
         }
     },
     "form": [
         {
             "type": "section",
+            "title": "Device Configuration",
             "expandable": true,
             "expanded": true,
-            "title": "Devices",
             "items": [
                 {
                     "key": "devices",
                     "items": [
                         "devices[].host",
                         "devices[].port",
+                        {
+                            "key": "devices[].encryptionKey",
+                            "type": "password"
+                        },
                         "devices[].password"
                     ]
                 }
