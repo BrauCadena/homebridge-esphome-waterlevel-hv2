@@ -1,6 +1,6 @@
 {
     "name": "homebridge-esphome-hv2",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "description": "Modernized ESPHome plugin for Homebridge with Encryption Key support",
     "main": "dist/src/index.js",
     "types": "dist/src/index.d.ts",
