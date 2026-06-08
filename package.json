@@ -1,7 +1,7 @@
 {
-    "name": "homebridge-esphome-hv2",
+    "name": "homebridge-esphome-waterlevel-hv2",
     "version": "1.4.4",
-    "description": "Modernized ESPHome plugin for Homebridge with Encryption Key support",
+    "description": "ESPHome plugin for Homebridge with Water Level, Temperature, Humidity sensor support and Noise Encryption",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
@@ -14,8 +14,9 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/BrauCadena/homebridge-esphome-hv2.git"
+        "url": "https://github.com/BrauCadena/homebridge-esphome-waterlevel-hv2.git"
     },
+    "homepage": "https://braucadena.github.io/homebridge-esphome-waterlevel-hv2",
     "files": [
         "dist",
         "config.schema.json"
@@ -24,6 +25,9 @@
         "homebridge",
         "esphome",
         "homebridge-plugin",
+        "water-level",
+        "ultrasonic",
+        "sensor",
         "braucadena-hv2"
     ],
     "author": "Brau Cadena",

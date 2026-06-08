@@ -5,7 +5,7 @@ import { EsphomePlatform } from './platform';
 /**
  * MUST match the "name" field in your package.json
  */
-export const PLUGIN_NAME = 'homebridge-esphome-hv2';
+export const PLUGIN_NAME = 'homebridge-esphome-waterlevel-hv2';
 
 /**
  * MUST match the "pluginAlias" field in your config.schema.json
