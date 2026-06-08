@@ -54,19 +54,6 @@ encryptionKey: The Noise encryption key found in your ESPHome YAML under api: en
 password: (Legacy) Only use if you are still using the old plaintext password method.
 port: Default is 6053.
 
-## Blacklisting
-If you want to exclude a specific component, add its name (as defined in ESPHome) to the blacklist array:
-
-```json
-{
-    "platform": "esphome-hv2",
-    "devices": [...],
-    "blacklist": [
-        "Internal Status LED",
-        "Restart Button"
-    ]
-}
-```
 
 ## Troubleshooting
 1. Check your YAML: Please make sure to add the api: entry to your ESPHome configuration!
