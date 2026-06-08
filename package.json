@@ -16,7 +16,7 @@
         "type": "git",
         "url": "https://github.com/BrauCadena/homebridge-esphome-waterlevel-hv2.git"
     },
-    "homepage": "https://braucadena.github.io/homebridge-esphome-waterlevel-hv2",
+    "homepage": "https://github.com/BrauCadena/homebridge-esphome-waterlevel-hv2",
     "files": [
         "dist",
         "config.schema.json"
