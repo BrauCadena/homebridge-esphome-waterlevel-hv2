@@ -50,44 +50,11 @@ export class EsphomePlatform implements DynamicPlatformPlugin {
                 this.log.info(`[HV2] Device Info received: ${info.name} (Model: ${info.modelName || 'ESPHome Device'})`);
             });
 
-            /**
-             * DYNAMIC COMPONENT DISCOVERY
-             * The @2colors library emits specific events for each component type.
-             * We listen to all common types to ensure we catch your sensors.
-             */
-            const componentTypes = [
-                'sensor', 'binarySensor', 'switch', 'light', 'fan', 
-                'climate', 'number', 'select', 'cover', 'textSensor',
-				'binary_sensor'
-            ];
-            
-            componentTypes.forEach(type => {
-                device.on(type, (entity: any) => {
-                    this.log.info(`[HV2] ${type.toUpperCase()} discovered: ${entity.config.name}`);
-                    
-                    if (!device.entities) {
-                        device.entities = [];
-                    }
-
-                    // Check if entity is already in our list to avoid duplicates
-                    const exists = device.entities.find((e: any) => e.config.objectId === entity.config.objectId);
-                    if (!exists) {
-                        // We inject the type into the entity object so addAccessories knows how to process it
-                        entity.type = type; 
-                        device.entities.push(entity);
-                    }
-
-                    // Trigger accessory registration/update
-                    this.addAccessories(device);
-                });
-            });
-
-            // Generic entity fallback (if supported by your library version)
-            device.on('entity', (entity: any) => {
-                this.log.info(`[HV2] Generic Entity discovered: ${entity.config.name}`);
-                if (!device.entities) device.entities = [];
-                device.entities.push(entity);
-                this.addAccessories(device);
+            // The library emits 'newEntity' for every discovered entity
+            device.on('newEntity', (entity: any) => {
+                const type = (entity.type as string)?.toLowerCase();
+                this.log.info(`[HV2] Entity discovered: ${entity.config.name} (type: ${type})`);
+                this.registerEntity(type, entity);
             });
 
             device.on('error', (err: any) => {
@@ -100,41 +67,34 @@ export class EsphomePlatform implements DynamicPlatformPlugin {
         }
     }
 
-    private addAccessories(device: any): void {
-        const entities = device.entities || [];
-        if (entities.length === 0) return;
+    private registerEntity(type: string, entity: any): void {
+        const componentHelper = componentHelpers.get(type);
+        if (!componentHelper) {
+            this.log.debug(`[HV2] No helper for entity type: ${type} (${entity.config.name})`);
+            return;
+        }
 
-        for (const entity of entities) {
-            // Match the component type with our Homebridge helpers
-            const componentHelper = componentHelpers.get(entity.type);
-            if (!componentHelper) continue;
+        const uuid = UUIDGen.generate(entity.config.uniqueId || entity.config.name);
+        let accessory = this.accessories.find((a) => a.UUID === uuid);
 
-            // Generate a persistent UUID
-            const uuid = UUIDGen.generate(entity.config.uniqueId || entity.config.name);
-            let accessory = this.accessories.find((a) => a.UUID === uuid);
-            
-            if (!accessory) {
-                this.log.info(`[HV2] Registering New Accessory: ${entity.config.name}`);
-                accessory = new Accessory(entity.config.name, uuid);
-                
-                // Set standard accessory information
-                const infoService = accessory.getService(Service.AccessoryInformation);
-                if (infoService) {
-                    infoService
-                        .setCharacteristic(Characteristic.Manufacturer, 'ESPHome')
-                        .setCharacteristic(Characteristic.Model, entity.type || 'Generic Device')
-                        .setCharacteristic(Characteristic.SerialNumber, entity.config.objectId || 'Unknown');
-                }
+        if (!accessory) {
+            this.log.info(`[HV2] Registering: ${entity.config.name}`);
+            accessory = new Accessory(entity.config.name, uuid);
 
-                // Call the helper to set up services and characteristics
-                if (componentHelper(entity, accessory)) {
-                    this.accessories.push(accessory);
-                    this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-                }
-            } else {
-                // Update existing accessory state/logic
-                componentHelper(entity, accessory);
+            const infoService = accessory.getService(Service.AccessoryInformation);
+            if (infoService) {
+                infoService
+                    .setCharacteristic(Characteristic.Manufacturer, 'ESPHome')
+                    .setCharacteristic(Characteristic.Model, type)
+                    .setCharacteristic(Characteristic.SerialNumber, entity.config.objectId || 'Unknown');
             }
+
+            if (componentHelper(entity, accessory)) {
+                this.accessories.push(accessory);
+                this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+            }
+        } else {
+            componentHelper(entity, accessory);
         }
     }
 

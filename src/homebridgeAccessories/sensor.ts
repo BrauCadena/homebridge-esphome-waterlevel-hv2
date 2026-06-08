@@ -82,11 +82,11 @@ const defaultSetup = (
         sensorService?.getCharacteristic(SelectedCharacteristic).updateValue(finalValue);
     };
 
-    // Set the initial value from the ESP32
-    updateValue(component.state);
+    // Set initial value — state is an object { state: number, key: number, ... }
+    updateValue(component.state?.state);
 
-    // Subscribe to real-time state changes from the device
-    component.on('state', (value: number) => {
-        updateValue(value);
+    // Subscribe to real-time state changes
+    component.on('state', (stateObj: any) => {
+        updateValue(typeof stateObj === 'object' ? stateObj.state : stateObj);
     });
 };
