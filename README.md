@@ -13,9 +13,6 @@ This version was specifically refactored to solve modern connectivity issues:
 - **Node.js Optimized**: Designed for modern environments, supporting **Node.js 18, 20, and 22**.
 
 ### Supported Components:
-- **Lights**: Including dimmable and RGB.
-- **Switches**: Standard switches and restart buttons.
-- **Binary Sensors**: Motion, window, door, smoke, and leakage.
 - **Sensors**: Temperature, humidity, and **Ultrasonic/Water Level** (rendered as percentage).
 
 ---
