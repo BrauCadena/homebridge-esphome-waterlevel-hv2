@@ -9,6 +9,9 @@ const fahrenheitUnit = '°F';
 const isTemperatureComponent = (unitOfMeasurement: string | undefined): boolean =>
     unitOfMeasurement === '°C' || unitOfMeasurement === fahrenheitUnit;
 
+const isDistanceComponent = (unitOfMeasurement: string | undefined, deviceClass: string | undefined): boolean =>
+    ['m', 'cm', 'mm'].includes(unitOfMeasurement ?? '') || deviceClass === 'distance';
+
 /**
  * Converts Fahrenheit values to Celsius for HomeKit compatibility.
  */
@@ -38,7 +41,12 @@ export const sensorHelper = (component: any, accessory: PlatformAccessory): bool
         return true;
     }
     
-    // Note: If your tinaco uses 'm' or 'cm', we can add custom logic here later.
+    // Distance sensor (water level in m/cm/mm) — mapped to LightSensor since HomeKit has no distance service
+    else if (isDistanceComponent(unit, deviceClass)) {
+        defaultSetup(component, accessory, Service.LightSensor, Characteristic.CurrentAmbientLightLevel);
+        return true;
+    }
+
     return false;
 };
 
@@ -48,8 +56,8 @@ export const sensorHelper = (component: any, accessory: PlatformAccessory): bool
 const defaultSetup = (
     component: any,
     accessory: PlatformAccessory,
-    SelectedService: typeof Service.TemperatureSensor | typeof Service.HumiditySensor,
-    SelectedCharacteristic: typeof Characteristic.CurrentTemperature | typeof Characteristic.CurrentRelativeHumidity,
+    SelectedService: typeof Service.TemperatureSensor | typeof Service.HumiditySensor | typeof Service.LightSensor,
+    SelectedCharacteristic: typeof Characteristic.CurrentTemperature | typeof Characteristic.CurrentRelativeHumidity | typeof Characteristic.CurrentAmbientLightLevel,
 ): void => {
     // Retrieve existing service or create a new one
     let sensorService = accessory.getService(SelectedService);
