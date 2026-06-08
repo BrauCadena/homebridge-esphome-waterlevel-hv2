@@ -69,17 +69,19 @@ const defaultSetup = (
     const unit = component.config?.unitOfMeasurement;
     const valuesAreFahrenheit = unit === fahrenheitUnit;
 
-    /**
-     * Updates the HomeKit characteristic with the current value.
-     */
+    let lastValue: number = valuesAreFahrenheit
+        ? fahrenheitToCelsius(component.state?.state ?? 0)
+        : (component.state?.state ?? 0);
+
+    const characteristic = sensorService.getCharacteristic(SelectedCharacteristic);
+
+    // Respond to HomeKit polls so it never shows "No Response"
+    characteristic.onGet(() => lastValue);
+
     const updateValue = (value: number | undefined) => {
         if (value === undefined) return;
-        
-        const finalValue = valuesAreFahrenheit 
-            ? fahrenheitToCelsius(value) 
-            : value;
-            
-        sensorService?.getCharacteristic(SelectedCharacteristic).updateValue(finalValue);
+        lastValue = valuesAreFahrenheit ? fahrenheitToCelsius(value) : value;
+        characteristic.updateValue(lastValue);
     };
 
     // Set initial value — state is an object { state: number, key: number, ... }
@@ -102,11 +104,17 @@ const distanceSetup = (component: any, accessory: PlatformAccessory): void => {
         sensorService = accessory.addService(Service.LightSensor, component.config.name);
     }
 
+    let lastValue = Math.max(0.0001, component.state?.state ?? 0.0001);
+
+    const characteristic = sensorService.getCharacteristic(Characteristic.CurrentAmbientLightLevel);
+
+    // Respond to HomeKit polls so it never shows "No Response"
+    characteristic.onGet(() => lastValue);
+
     const updateValue = (value: number | undefined) => {
         if (value === undefined || value === null) return;
-        // Clamp to HomeKit minimum for CurrentAmbientLightLevel
-        const safe = Math.max(0.0001, value);
-        sensorService?.getCharacteristic(Characteristic.CurrentAmbientLightLevel).updateValue(safe);
+        lastValue = Math.max(0.0001, value);
+        characteristic.updateValue(lastValue);
     };
 
     updateValue(component.state?.state);
